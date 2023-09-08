@@ -34,6 +34,7 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import java.util.*
 
+var accelListenerRegistered = false
 class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -77,9 +78,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun GPS(fusedLocationClient: FusedLocationProviderClient) {
     val lastLocation = remember { mutableStateOf<Location?>(Location("")) }
-    var nextLocation = Location("")
-    val list = remember { mutableStateOf(ArrayList<Float>()) }
-    val meanValue = remember { mutableFloatStateOf(0.0f) }
+    val list = remember { mutableStateListOf(0.0f) }
+    var meanValue : Float
     val maxListSize = 50
 
     val ctx = LocalContext.current
@@ -93,20 +93,18 @@ fun GPS(fusedLocationClient: FusedLocationProviderClient) {
     }
 
     val accelSensorEventListener = object : SensorEventListener {
-        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
-
-        }
+        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
         override fun onSensorChanged(event: SensorEvent) {
             if (event.sensor.type == Sensor.TYPE_ACCELEROMETER) {
-                list.value.add(event.values[2])
-                if (list.value.size > maxListSize) {
-                    list.value.removeAt(0)
+                list.add(event.values[2])
+                if (list.size > maxListSize) {
+                    list.removeAt(0)
                 }
-                meanValue.floatValue = mean(list.value)
-//                if (meanValue.floatValue > 5f) {
-//                    println("acc: ${meanValue.floatValue}, loc: ${parseLocation(lastLocation.value)}")
-//                }
+                meanValue = mean(list)
+                if (meanValue > 11f) {
+                    println("acc: $meanValue, loc: ${parseLocation(lastLocation.value)}")
+                }
             }
         }
 
@@ -115,14 +113,18 @@ fun GPS(fusedLocationClient: FusedLocationProviderClient) {
         }
     }
 
-    sensorManager.registerListener(
-        accelSensorEventListener,
-        accelSensor,
-        SensorManager.SENSOR_DELAY_NORMAL
-    )
+    if(!accelListenerRegistered) {
+        sensorManager.registerListener(
+            accelSensorEventListener,
+            accelSensor,
+            SensorManager.SENSOR_DELAY_NORMAL
+        )
+        accelListenerRegistered = true
+    }
 
     fun startGettingLocation() {
         val locationRequest = LocationRequest.Builder(100)
+            .setMinUpdateDistanceMeters(0.5f)
             .setPriority(Priority.PRIORITY_HIGH_ACCURACY).build()
 
         fusedLocationClient.requestLocationUpdates(
@@ -131,12 +133,7 @@ fun GPS(fusedLocationClient: FusedLocationProviderClient) {
                 override fun onLocationResult(location: LocationResult) {
                     super.onLocationResult(location)
 
-                    if ((lastLocation.value)!!.distanceTo(nextLocation) > 1f) {
-                        println(parseLocation(lastLocation.value))
-                    }
-
-                    lastLocation.value = nextLocation
-                    nextLocation = (location.lastLocation)!!
+                    lastLocation.value = (location.lastLocation)!!
                 }
             },
             (Looper.myLooper())!!
@@ -154,7 +151,7 @@ fun GPS(fusedLocationClient: FusedLocationProviderClient) {
         verticalArrangement = Arrangement.Center
     ) {
         Button(onClick = { startGettingLocation() }) {
-            Text(text = "Show my location")
+            Text(text = "Start collecting data")
         }
         Text(
             text = "Current location:",
